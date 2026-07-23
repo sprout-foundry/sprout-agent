@@ -161,13 +161,62 @@ review_fetch_context() {
     } > "$out/context.md"
 
     # Render prompt.md — what the model actually receives.
+    #
+    # We substitute REVIEW_TYPE and COMMENT_THRESHOLD into the prompt so
+    # the reviewer sees them inline as part of its instructions, not as
+    # ambient env vars. Inline text is more reliable than env-var lookups
+    # inside an LLM. The prompt template's placeholders are
+    # ${REVIEW_TYPE_PARAGRAPH} and ${COMMENT_THRESHOLD_PARAGRAPH}; both
+    # are filled with a one-paragraph guidance block.
+    local rt="${REVIEW_TYPE:-comprehensive}"
+    case "$rt" in
+        comprehensive|security|performance) ;;
+        *) log_warn "Unknown REVIEW_TYPE='$rt'; falling back to 'comprehensive'"; rt="comprehensive" ;;
+    esac
+    local ct="${COMMENT_THRESHOLD:-medium}"
+    case "$ct" in
+        high|medium|low) ;;
+        *) log_warn "Unknown COMMENT_THRESHOLD='$ct'; falling back to 'medium'"; ct="medium" ;;
+    esac
+    local rt_para ct_para
+    case "$rt" in
+        security)
+            rt_para="**Review focus: security.** Prioritise vulnerabilities (auth/authz bypasses, injection, secrets, SSRF, deserialization, dependency CVEs, supply-chain risks). Other categories are out of scope for this review."
+            ;;
+        performance)
+            rt_para="**Review focus: performance.** Prioritise regressions (algorithmic complexity, allocations, locking, query plans, network round-trips, unbounded loops). Other categories are out of scope for this review."
+            ;;
+        *)
+            rt_para="**Review focus: comprehensive.** Cover all categories (correctness, security, performance, maintainability) weighted by severity."
+            ;;
+    esac
+    case "$ct" in
+        high)
+            ct_para="**Comment threshold: high.** Post inline comments ONLY for critical issues (production crashes, data loss, immediately exploitable security vulnerabilities). Otherwise post the summary as a single PR comment."
+            ;;
+        medium)
+            ct_para="**Comment threshold: medium.** Post inline comments for critical AND major issues (real bugs, security vulnerabilities, significant performance regressions, logic errors)."
+            ;;
+        *)
+            ct_para="**Comment threshold: low.** Post inline comments for critical, major, AND minor issues (including code-quality concerns that need fixing)."
+            ;;
+    esac
+
+    # sed substitution. We anchor with %%...%% markers so they don't collide
+    # with prose in the prompt that happens to use ${...} syntax. Using |
+    # as the sed delimiter keeps slashes in prose untouched.
+    local prompt_body
+    prompt_body=$(cat "$SPROUT_AGENT_PROMPTS/review_initial_prompt.md")
+    prompt_body=$(printf '%s' "$prompt_body" | sed \
+        -e "s|%%REVIEW_TYPE_PARAGRAPH%%|$rt_para|g" \
+        -e "s|%%COMMENT_THRESHOLD_PARAGRAPH%%|$ct_para|g")
     {
-        cat "$SPROUT_AGENT_PROMPTS/review_initial_prompt.md"
+        printf '%s' "$prompt_body"
         printf '\n\n## Context\n\n'
         cat "$out/context.md"
     } > "$out/prompt.md"
 
-    log_ok "Context ready ($(wc -c < "$out/context.md") bytes; diff: $diff_lines lines)"
+    log_ok "Context ready ($(wc -c < "$out/context.md") bytes; diff: $diff_lines lines; review_type=$rt; threshold=$ct)"
 }
 
 # review_render_workflow_json — write $1 as the AgentWorkflowConfig for review.
@@ -256,6 +305,31 @@ review_post_results() {
     approval=$(jq -r '.approval_status // "comment"' "$review_json")
     comments_json=$(jq -c '.comments // []' "$review_json")
 
+    # Threshold filter. Driven by COMMENT_THRESHOLD env var (default
+    # medium). Inline comments below the floor are dropped — the model's
+    # prompt already biases its writing toward the threshold, but we
+    # filter again at post time so a model that mis-calibrates still
+    # respects the user's stated noise tolerance.
+    local threshold="${COMMENT_THRESHOLD:-medium}"
+    case "$threshold" in
+        high|medium|low) ;;
+        *) log_warn "Unknown COMMENT_THRESHOLD='$threshold'; falling back to 'medium'"; threshold="medium" ;;
+    esac
+    local allowed_severities
+    case "$threshold" in
+        high)   allowed_severities='["critical"]' ;;
+        medium) allowed_severities='["critical","major"]' ;;
+        *)      allowed_severities='["critical","major","minor"]' ;;
+    esac
+    local filtered_count total_count
+    total_count=$(printf '%s' "$comments_json" | jq 'length')
+    comments_json=$(printf '%s' "$comments_json" | jq --argjson s "$allowed_severities" \
+        '[.[] | select((.severity // "major") as $sev | $s | index($sev) != null)]')
+    filtered_count=$(printf '%s' "$comments_json" | jq 'length')
+    if [ "$filtered_count" -lt "$total_count" ]; then
+        log_info "Threshold=$threshold: kept $filtered_count/$total_count inline comments"
+    fi
+
     # Map our approval semantics to GitHub's review event API. Unknown
     # statuses default to COMMENT — we log a warning so the user can
     # see we got an unexpected value rather than silently downgrading.
@@ -270,7 +344,36 @@ review_post_results() {
             ;;
     esac
 
-    log_info "Posting review to PR #$pr_number (event=$event, comments=$(printf '%s' "$comments_json" | jq 'length'))"
+    # Self-PR guard. GitHub forbids approving/requesting-changes on your
+    # own PR — the API returns 422 with message "Can not approve your own
+    # pull request" or "Can not request changes on your own pull request".
+    # We proactively downgrade APPROVE/REQUEST_CHANGES → COMMENT on a
+    # self-authored PR so the user doesn't get a confusing 422 in the
+    # action logs.
+    #
+    # We resolve the bot's login via the token's /user endpoint. On
+    # classic GitHub Actions this is "github-actions[bot]"; for users
+    # supplying a personal access token it's their own login. The PR
+    # author comes from the context file written by review_fetch_context
+    # (cheap because that file is already on disk).
+    local bot_login pr_author=""
+    bot_login=$(curl --fail --show-error --silent --max-time 10 \
+        "${hdr[@]}" "https://api.github.com/user" 2>/dev/null \
+        | jq -r '.login // empty' 2>/dev/null) || bot_login=""
+    if [ -f "$SPROUT_RUN_DIR/context.md" ]; then
+        pr_author=$(awk -F': ' '/^\*\*Author\*\*: @/ {print $2; exit}' \
+            "$SPROUT_RUN_DIR/context.md" | tr -d '@' || true)
+    fi
+
+    if [ -n "$bot_login" ] && [ -n "$pr_author" ] \
+        && [ "$bot_login" = "$pr_author" ]; then
+        if [ "$event" = "APPROVE" ] || [ "$event" = "REQUEST_CHANGES" ]; then
+            log_warn "Self-PR detected (bot=$bot_login, author=$pr_author); downgrading $event → COMMENT"
+            event="COMMENT"
+        fi
+    fi
+
+    log_info "Posting review to PR #$pr_number (event=$event, comments=$filtered_count)"
 
     # Single POST: GitHub's /reviews endpoint accepts the body, verdict,
     # and inline comments in one atomic request. Avoids duplicating the

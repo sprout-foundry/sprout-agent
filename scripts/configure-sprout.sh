@@ -24,17 +24,39 @@ mkdir -p "$SPROUT_CONFIG"
 log_info "Writing api_keys.json via jq..."
 
 # Inputs whose values are non-empty are included; absent values are skipped.
-# `$env` is jq's special object that reads process environment.
-jq -n '
-    {
-        openai:     ($env.OPENAI_API_KEY     // empty | select(. != "")),
-        openrouter: ($env.OPENROUTER_API_KEY // empty | select(. != "")),
-        deepinfra:  ($env.DEEPINFRA_API_KEY  // empty | select(. != "")),
-        zai:        ($env.ZAI_API_KEY        // empty | select(. != "")),
-        chutes:     ($env.CHUTES_API_KEY     // empty | select(. != "")),
-        mistral:    ($env.MISTRAL_API_KEY    // empty | select(. != "")),
-        jinaai:     ($env.JINA_API_KEY       // empty | select(. != ""))
+# We pass each env var explicitly via --arg because the $env shortcut in
+# jq requires jq 1.7+, but GitHub Actions runners ship with jq 1.6
+# (apt-get install jq on Ubuntu 22.04 / 24.04). Passing through --arg is
+# portable across all supported jq versions.
+#
+# Why a single with_entries filter rather than per-field select: putting
+# `select(. != "")` inside an object expression like `{a: ($x | select(. != ""))}`
+# drops the entire key-value pair (the select emits an empty stream,
+# which jq treats as "no value" at the object-field level). So we build
+# the full object with empty strings and let with_entries drop the
+# empties in one pass.
+jq -n \
+    --arg openai     "${OPENAI_API_KEY:-}"     \
+    --arg openrouter "${OPENROUTER_API_KEY:-}" \
+    --arg deepinfra  "${DEEPINFRA_API_KEY:-}"  \
+    --arg zai        "${ZAI_API_KEY:-}"        \
+    --arg chutes     "${CHUTES_API_KEY:-}"     \
+    --arg mistral    "${MISTRAL_API_KEY:-}"    \
+    --arg jinaai     "${JINA_API_KEY:-}"       \
+    --arg custom     "${CUSTOM_PROVIDER_API_KEY:-}" \
+    --arg custom_name "${CUSTOM_PROVIDER_NAME:-}" \
+    '{
+        openai:     $openai,
+        openrouter: $openrouter,
+        deepinfra:  $deepinfra,
+        zai:        $zai,
+        chutes:     $chutes,
+        mistral:    $mistral,
+        jinaai:     $jinaai
     }
+    | (if ($custom != "" and $custom_name != "") then
+          . + { ($custom_name): $custom }
+      else . end)
     | with_entries(select(.value != null and .value != ""))
 ' > "$SPROUT_CONFIG/api_keys.json"
 
@@ -52,15 +74,76 @@ jq -n \
     --arg provider "$AI_PROVIDER" \
     --arg model    "$AI_MODEL" \
     '{
-        version: "3.0",
+        version: "2.0",
         last_used_provider: $provider,
         provider_models: { ($provider): $model },
         provider_priority: [$provider]
     }' > "$SPROUT_CONFIG/config.json"
 
+# ---------------------------------------------------------------------------
+# Custom provider — register an OpenAI-compatible endpoint not in the
+# built-in list (Groq, Together, Fireworks, vLLM, corporate proxies,
+# LM Studio, etc.). Triggered by setting CUSTOM_PROVIDER_URL. The name
+# defaults to "custom"; the user can pick any identifier that doesn't
+# collide with the built-in providers (openai, openrouter, ...).
+#
+# Why jq-only and not string concat: a model name or endpoint with
+# special characters must not corrupt the config file. Same F6 lesson
+# as api_keys.json above.
+# ---------------------------------------------------------------------------
+if [ -n "${CUSTOM_PROVIDER_URL:-}" ] && [ -n "${CUSTOM_PROVIDER_NAME:-}" ]; then
+    log_info "Registering custom provider '${CUSTOM_PROVIDER_NAME}' → ${CUSTOM_PROVIDER_URL}"
+    custom_model="${CUSTOM_PROVIDER_MODEL:-$AI_MODEL}"
+    requires_key="false"
+    [ -n "${CUSTOM_PROVIDER_API_KEY:-}" ] && requires_key="true"
+
+    # In-memory registration via custom_providers on the root config. The
+    # spawn up on next Save(), so this is enough for the current run but
+    # the canonical store is the per-provider file below.
+    jq --arg name "$CUSTOM_PROVIDER_NAME" \
+       --arg url  "$CUSTOM_PROVIDER_URL" \
+       --arg mdl  "$custom_model" \
+       --argjson req "$requires_key" \
+       '.custom_providers[$name] = {
+            name:             $name,
+            endpoint:         $url,
+            model_name:       $mdl,
+            requires_api_key: $req,
+            env_var:          "CUSTOM_PROVIDER_API_KEY"
+        }' "$SPROUT_CONFIG/config.json" > "$SPROUT_CONFIG/config.json.tmp" \
+        && mv "$SPROUT_CONFIG/config.json.tmp" "$SPROUT_CONFIG/config.json"
+
+    # Canonical store: per-provider JSON in providers/${name}.json. This is
+    # what sprout's CustomProviderRegistry / LoadConfigWithLayers actually
+    # reads on subsequent runs, and what survives a config.json Save().
+    # We write it directly rather than calling `sprout custom add` so this
+    # script doesn't depend on sprout being installed yet (this runs in
+    # the Configure step, before Install sprout).
+    mkdir -p "$SPROUT_CONFIG/providers"
+    jq -n \
+        --arg name "$CUSTOM_PROVIDER_NAME" \
+        --arg url  "$CUSTOM_PROVIDER_URL" \
+        --arg mdl  "$custom_model" \
+        --argjson req "$requires_key" \
+        '{
+            name:             $name,
+            endpoint:         $url,
+            model_name:       $mdl,
+            requires_api_key: $req,
+            env_var:          "CUSTOM_PROVIDER_API_KEY",
+            auth_type:        "bearer",
+            context_size:     32768,
+            timeout_seconds:  120
+        }' > "$SPROUT_CONFIG/providers/${CUSTOM_PROVIDER_NAME}.json"
+
+    log_ok "Custom provider ${CUSTOM_PROVIDER_NAME} registered"
+elif [ -n "${CUSTOM_PROVIDER_URL:-}" ] || [ -n "${CUSTOM_PROVIDER_NAME:-}" ]; then
+    log_warn "CUSTOM_PROVIDER_URL and CUSTOM_PROVIDER_NAME must both be set to register a custom provider — ignoring"
+fi
+
 log_ok "Config written"
-log_debug "primary: $AI_PROVIDER / $AI_MODEL"
-log_debug "subagent overrides — coder: $CODER_PROVIDER/${CODER_MODEL:-<inherit>} reviewer: $REVIEWER_PROVIDER/${REVIEWER_MODEL:-<inherit>}"
+log_debug "primary: ${AI_PROVIDER:-<unset>} / ${AI_MODEL:-<unset>}"
+log_debug "subagent overrides — coder: ${CODER_PROVIDER:-<unset>}/${CODER_MODEL:-<inherit>} reviewer: ${REVIEWER_PROVIDER:-<unset>}/${REVIEWER_MODEL:-<inherit>}"
 
 # ---------------------------------------------------------------------------
 # provider_priority.txt — sprout falls back through this list when its
@@ -81,10 +164,18 @@ PROVIDER_ORDER=(openrouter openai deepinfra chutes zai mistral jinaai)
 PROVIDER_PRIORITY=()
 
 # If the user set a primary, put it first (only if we have a key).
+# Built-in providers (openai/openrouter/...) require their *_API_KEY;
+# custom providers use CUSTOM_PROVIDER_API_KEY.
 if [ -n "${AI_PROVIDER:-}" ]; then
     case "$AI_PROVIDER" in
         openai|openrouter|deepinfra|chutes|zai|mistral|jinaai)
             if [ -n "$(eval printf '%s' "\${${AI_PROVIDER^^}_API_KEY:-}")" ]; then
+                PROVIDER_PRIORITY+=("$AI_PROVIDER")
+            fi
+            ;;
+        *)
+            # Custom provider name — register if a key was provided.
+            if [ -n "${CUSTOM_PROVIDER_API_KEY:-}" ] && [ "$AI_PROVIDER" = "${CUSTOM_PROVIDER_NAME:-}" ]; then
                 PROVIDER_PRIORITY+=("$AI_PROVIDER")
             fi
             ;;

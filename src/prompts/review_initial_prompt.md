@@ -30,12 +30,11 @@ another tool, so your response MUST end with a call that writes both
 
 ## Comment threshold
 
-You will see the comment threshold from the env var `COMMENT_THRESHOLD`.
-Default is `medium`. Apply it strictly:
-- `high`: only critical
-- `medium`: critical + major (real bugs, security issues, performance
-  regressions that matter)
-- `low`: also minor (quality issues that need fixing)
+%%COMMENT_THRESHOLD_PARAGRAPH%%
+
+## Review focus
+
+%%REVIEW_TYPE_PARAGRAPH%%
 
 ## Output contract
 

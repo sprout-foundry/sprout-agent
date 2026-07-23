@@ -90,6 +90,8 @@ fi
            --max-iterations "$EFFECTIVE_MAX_ITERATIONS" \
            --budget-usd "$EFFECTIVE_MAX_BUDGET_USD" \
            --budget-warn "$EFFECTIVE_BUDGET_WARN" \
+           --output-json \
+           --output-path "$SPROUT_RUN_DIR/agent-result.json" \
            --prompt-stdin \
        < "$SPROUT_RUN_DIR/prompt.md" )
 sprout_exit=$?
@@ -108,7 +110,6 @@ fi
 
 emit_output "pr-number=$PR_NUMBER"
 # Surface spend so callers can build budgets on top of this action.
-# Cost lives in review.json.cost_usd; we tolerate alternative keys.
-emit_output "cost=$(jq -r '.cost_usd // .cost_total // empty' "$REVIEW_JSON" 2>/dev/null || true)"
+emit_cost_output
 
 [ "$sprout_exit" -eq 0 ] || exit "$sprout_exit"

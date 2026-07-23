@@ -85,7 +85,7 @@ EFFECTIVE_MAX_BUDGET_USD="${MAX_BUDGET_USD:-$(default_budget_usd)}"
 EFFECTIVE_BUDGET_WARN="${BUDGET_WARN:-0.5,0.8}"
 EFFECTIVE_TIMEOUT_MINUTES="${TIMEOUT_MINUTES:-$(default_timeout_minutes)}"
 EFFECTIVE_TRIGGER_PHRASE="${TRIGGER_PHRASE:-$(default_trigger_phrase)}"
-EFFECTIVE_MCP="${MCP:-$( [ "$MODE" = "fix" ] && echo "github" || echo "off" )}"
+EFFECTIVE_MCP="${MCP:-$( [ "${MODE:-review}" = "fix" ] && echo "github" || echo "off" )}"
 
 export EFFECTIVE_MAX_ITERATIONS
 export EFFECTIVE_MAX_BUDGET_USD
@@ -176,4 +176,36 @@ emit_output() {
         printf '%s\n' "$*" >> "$GITHUB_OUTPUT"
     fi
     log_debug "output: $*"
+}
+
+# emit_cost_output — extract USD cost from sprout's agent-result JSON and
+# emit it as the `cost` action output.
+#
+# Sprout writes a structured result when invoked with --output-json +
+# --output-path. The cost lives at `.metrics.cost` (USD, float).
+#
+# Tolerates:
+#   - Missing file (sprout didn't write it because of an early failure)
+#   - Malformed JSON (jq returns non-zero; we don't want to crash the run)
+#   - Zero / empty cost (e.g. provider returned no usage data)
+# We never fail the workflow for cost-tracking issues.
+emit_cost_output() {
+    local result_json="${1:-$SPROUT_RUN_DIR/agent-result.json}"
+    local cost=""
+
+    if [ -f "$result_json" ]; then
+        cost=$(jq -r '.metrics.cost // empty' "$result_json" 2>/dev/null || true)
+    fi
+
+    # Emit empty when truly absent (no JSON, no .metrics.cost). Otherwise
+    # pass through whatever value sprout reported — including a legitimate
+    # 0.00 from a free-tier call. `awk` does the numeric positivity check
+    # without tripping on "0.00" vs "0" string comparisons.
+    if [ -n "$cost" ] && [ "$cost" != "null" ] && awk -v c="$cost" 'BEGIN { exit !(c+0 >= 0) }'; then
+        emit_output "cost=$cost"
+        log_info "Run cost: \$${cost}"
+    else
+        emit_output "cost="
+        log_debug "Cost not reported (no agent-result.json or .metrics.cost absent)"
+    fi
 }

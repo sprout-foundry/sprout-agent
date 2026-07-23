@@ -94,6 +94,42 @@ inputs:
     default: ''
 
   # -------------------------------------------------------------------------
+  # Custom OpenAI-compatible provider — for any endpoint not in the list
+  # above (Groq, Together, Fireworks, vLLM, corporate proxies, LM Studio,
+  # etc.). Set custom-provider-url to register the provider. Naming it via
+  # custom-provider-name lets you route one of the subagent personas at it.
+  # -------------------------------------------------------------------------
+  custom-provider-name:
+    description: 'Identifier for the custom provider. Set primary-provider to this value to use it as the primary.'
+    required: false
+    default: ''
+  custom-provider-url:
+    description: 'Base endpoint URL for the custom provider (e.g. https://api.example.com/v1).'
+    required: false
+    default: ''
+  custom-provider-model:
+    description: 'Default model name for the custom provider. Defaults to primary-model when omitted.'
+    required: false
+    default: ''
+  custom-provider-api-key:
+    description: 'API key for the custom provider (stored under CUSTOM_PROVIDER_API_KEY env var).'
+    required: false
+    default: ''
+
+  # -------------------------------------------------------------------------
+  # Review-mode tuning — drives the reviewer persona prompt + comment filter.
+  # review-type shapes the focus area; comment-threshold controls noise.
+  # -------------------------------------------------------------------------
+  review-type:
+    description: 'Review focus: comprehensive (default) | security | performance. Security focuses on vulnerabilities; performance focuses on regressions.'
+    required: false
+    default: 'comprehensive'
+  comment-threshold:
+    description: 'Inline-comment severity floor: high (critical only) | medium (+major, default) | low (+minor/suggestion).'
+    required: false
+    default: 'medium'
+
+  # -------------------------------------------------------------------------
   # Workflow tuning
   # -------------------------------------------------------------------------
   max-iterations:
@@ -181,6 +217,10 @@ runs:
         CHUTES_API_KEY: ${{ inputs.chutes-api-key }}
         MISTRAL_API_KEY: ${{ inputs.mistral-api-key }}
         JINA_API_KEY: ${{ inputs.jina-api-key }}
+        CUSTOM_PROVIDER_NAME: ${{ inputs.custom-provider-name }}
+        CUSTOM_PROVIDER_URL: ${{ inputs.custom-provider-url }}
+        CUSTOM_PROVIDER_MODEL: ${{ inputs.custom-provider-model }}
+        CUSTOM_PROVIDER_API_KEY: ${{ inputs.custom-provider-api-key }}
         MAX_ITERATIONS: ${{ inputs.max-iterations }}
         MAX_BUDGET_USD: ${{ inputs.max-budget-usd }}
         BUDGET_WARN: ${{ inputs.budget-warn }}
@@ -201,4 +241,6 @@ runs:
         MCP: ${{ inputs.mcp }}
         MAX_BUDGET_USD: ${{ inputs.max-budget-usd }}
         BUDGET_WARN: ${{ inputs.budget-warn }}
+        REVIEW_TYPE: ${{ inputs.review-type }}
+        COMMENT_THRESHOLD: ${{ inputs.comment-threshold }}
       run: ${{ github.action_path }}/scripts/dispatch.sh

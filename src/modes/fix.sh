@@ -89,6 +89,8 @@ fi
            --max-iterations "$EFFECTIVE_MAX_ITERATIONS" \
            --budget-usd "$EFFECTIVE_MAX_BUDGET_USD" \
            --budget-warn "$EFFECTIVE_BUDGET_WARN" \
+           --output-json \
+           --output-path "$SPROUT_RUN_DIR/agent-result.json" \
            --prompt-stdin \
        < "$PROMPT_FILE" )
 sprout_exit=$?
@@ -110,10 +112,9 @@ emit_output "branch-name=$BRANCH_NAME"
 emit_output "pr-number=$(jq -r '.number // empty' "$SPROUT_RUN_DIR/pr.json" 2>/dev/null || true)"
 emit_output "pr-url=$(jq -r '.url // empty' "$SPROUT_RUN_DIR/pr.json" 2>/dev/null || true)"
 
-# Surface spend as a top-level output. Costs live in the runlog; we
-# summarise the most likely shape (review.json.cost_usd). If it isn't
-# present we just emit empty rather than failing the workflow.
-emit_output "cost=$(jq -r '.cost_usd // .cost_total // empty' "$SPROUT_RUN_DIR/review.json" 2>/dev/null || true)"
+# Surface spend as a top-level output. Reads from sprout's structured
+# agent-result.json which fix mode always writes via --output-json.
+emit_cost_output
 
 [ "$sprout_exit" -eq 0 ] || exit "$sprout_exit"
 

@@ -81,6 +81,8 @@ fi
            --max-iterations "$EFFECTIVE_MAX_ITERATIONS" \
            --budget-usd "$EFFECTIVE_MAX_BUDGET_USD" \
            --budget-warn "$EFFECTIVE_BUDGET_WARN" \
+           --output-json \
+           --output-path "$SPROUT_RUN_DIR/agent-result.json" \
            --prompt-stdin \
        < "$PROMPT_FILE" )
 sprout_exit=$?
@@ -96,9 +98,7 @@ else
 fi
 
 emit_output "issue-number=$ISSUE_NUMBER"
-# Cost is most reliable on the plan.md frontmatter the agent writes;
-# also check a sibling summary.json the agent may emit.
-emit_output "cost=$(jq -r '.cost_usd // .cost_total // .cost // empty' "$SPROUT_RUN_DIR/plan.md" 2>/dev/null || true)"
+emit_cost_output
 [ "$sprout_exit" -eq 0 ] || exit "$sprout_exit"
 
 # -- Mode-internal helpers -------------------------------------------------
