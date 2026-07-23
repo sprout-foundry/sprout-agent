@@ -1,0 +1,204 @@
+name: 'Sprout Agent'
+description: 'Run sprout to solve issues and review PRs in GitHub Actions'
+author: 'Alan Price'
+
+branding:
+  icon: 'code'
+  color: 'green'
+
+inputs:
+  # -------------------------------------------------------------------------
+  # Mode and event handling
+  # -------------------------------------------------------------------------
+  mode:
+    description: 'Operation mode: review (default), fix, or plan'
+    required: false
+    default: 'review'
+
+  github-token:
+    description: 'GitHub token for API access (PR/issue fetch + comments)'
+    required: true
+
+  # -------------------------------------------------------------------------
+  # Sprout installation
+  # -------------------------------------------------------------------------
+  sprout-version:
+    description: 'Sprout version tag to install (e.g. v1.0.0). Default: latest release.'
+    required: false
+    default: 'latest'
+
+  # -------------------------------------------------------------------------
+  # Primary provider — orchestrator / main step
+  # -------------------------------------------------------------------------
+  primary-provider:
+    description: 'Provider for orchestrator/reviewer (e.g. zai, deepinfra, openrouter)'
+    required: true
+  primary-model:
+    description: 'Model id (e.g. GLM-5.0-Air, deepseek-ai/DeepSeek-V3.1)'
+    required: true
+
+  # -------------------------------------------------------------------------
+  # Subagent overrides — route each persona to a specific provider/model.
+  # These are the cost levers; the orchestrator stays on primary so it can
+  # reason coherently, while coder/tester/reviewer can use a cheaper/faster
+  # provider suited to the task.
+  # -------------------------------------------------------------------------
+  coder-provider:
+    description: 'Provider for the coder subagent (defaults to primary)'
+    required: false
+    default: ''
+  coder-model:
+    description: 'Model for the coder subagent (defaults to primary)'
+    required: false
+    default: ''
+  reviewer-provider:
+    description: 'Provider for the reviewer persona (defaults to primary)'
+    required: false
+    default: ''
+  reviewer-model:
+    description: 'Model for the reviewer persona (defaults to primary)'
+    required: false
+    default: ''
+
+  # -------------------------------------------------------------------------
+  # Provider API keys — set whichever you use. Sprout reads these natively
+  # so multiple providers can be active simultaneously.
+  # -------------------------------------------------------------------------
+  openai-api-key:
+    description: 'OpenAI API key'
+    required: false
+    default: ''
+  openrouter-api-key:
+    description: 'OpenRouter API key'
+    required: false
+    default: ''
+  deepinfra-api-key:
+    description: 'DeepInfra API key'
+    required: false
+    default: ''
+  zai-api-key:
+    description: 'Z.AI API key'
+    required: false
+    default: ''
+  chutes-api-key:
+    description: 'Chutes API key'
+    required: false
+    default: ''
+  mistral-api-key:
+    description: 'Mistral API key'
+    required: false
+    default: ''
+  jina-api-key:
+    description: 'Jina API key (web search)'
+    required: false
+    default: ''
+
+  # -------------------------------------------------------------------------
+  # Workflow tuning
+  # -------------------------------------------------------------------------
+  max-iterations:
+    description: 'Max iterations for the primary agent step. Default: 120 for review, 240 for fix.'
+    required: false
+    default: ''
+  max-budget-usd:
+    description: 'Hard USD cap on the workflow run. Overrides per-mode default.'
+    required: false
+    default: ''
+  budget-warn:
+    description: 'Comma-separated warning thresholds as fractions, e.g. "0.5,0.8".'
+    required: false
+    default: ''
+  timeout-minutes:
+    description: 'Wall-clock timeout in minutes. Defaults are mode-dependent.'
+    required: false
+    default: ''
+
+  # -------------------------------------------------------------------------
+  # MCP
+  # -------------------------------------------------------------------------
+  mcp:
+    description: 'MCP servers to enable. off | github. github only auto-on in fix mode.'
+    required: false
+    default: ''
+
+  # -------------------------------------------------------------------------
+  # Debug
+  # -------------------------------------------------------------------------
+  debug:
+    description: 'Enable debug logging (echoes resolved env vars + workflow JSON)'
+    required: false
+    default: 'false'
+
+  # -------------------------------------------------------------------------
+  # Trigger phrase override
+  # -------------------------------------------------------------------------
+  trigger-phrase:
+    description: 'Comment phrase that triggers the agent. Default per mode: /sprout-review, /sprout-fix, /sprout-plan'
+    required: false
+    default: ''
+
+outputs:
+  success:
+    description: 'Whether the run produced usable output (review.json created / PR created)'
+    value: ${{ steps.main.outputs.success }}
+  pr-number:
+    description: 'Pull request number created or updated (fix mode)'
+    value: ${{ steps.main.outputs.pr-number }}
+  pr-url:
+    description: 'Pull request URL (fix mode)'
+    value: ${{ steps.main.outputs.pr-url }}
+  branch-name:
+    description: 'Branch created/updated (fix mode)'
+    value: ${{ steps.main.outputs.branch-name }}
+  cost:
+    description: 'Cumulative USD cost of the run, if reported'
+    value: ${{ steps.main.outputs.cost }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: ${{ github.action_path }}/scripts/install-deps.sh
+
+    - name: Install sprout
+      shell: bash
+      run: ${{ github.action_path }}/scripts/install-sprout.sh "${{ inputs.sprout-version }}"
+
+    - name: Configure sprout
+      shell: bash
+      env:
+        AI_PROVIDER: ${{ inputs.primary-provider }}
+        AI_MODEL: ${{ inputs.primary-model }}
+        CODER_PROVIDER: ${{ inputs.coder-provider }}
+        CODER_MODEL: ${{ inputs.coder-model }}
+        REVIEWER_PROVIDER: ${{ inputs.reviewer-provider }}
+        REVIEWER_MODEL: ${{ inputs.reviewer-model }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        DEEPINFRA_API_KEY: ${{ inputs.deepinfra-api-key }}
+        ZAI_API_KEY: ${{ inputs.zai-api-key }}
+        CHUTES_API_KEY: ${{ inputs.chutes-api-key }}
+        MISTRAL_API_KEY: ${{ inputs.mistral-api-key }}
+        JINA_API_KEY: ${{ inputs.jina-api-key }}
+        MAX_ITERATIONS: ${{ inputs.max-iterations }}
+        MAX_BUDGET_USD: ${{ inputs.max-budget-usd }}
+        BUDGET_WARN: ${{ inputs.budget-warn }}
+        TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+        MCP: ${{ inputs.mcp }}
+        DEBUG: ${{ inputs.debug }}
+        MODE: ${{ inputs.mode }}
+      run: ${{ github.action_path }}/scripts/configure-sprout.sh
+
+    - name: Run workflow based on mode
+      id: main
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        MODE: ${{ inputs.mode }}
+        TRIGGER_PHRASE: ${{ inputs.trigger-phrase }}
+        DEBUG: ${{ inputs.debug }}
+        MCP: ${{ inputs.mcp }}
+        MAX_BUDGET_USD: ${{ inputs.max-budget-usd }}
+        BUDGET_WARN: ${{ inputs.budget-warn }}
+      run: ${{ github.action_path }}/scripts/dispatch.sh

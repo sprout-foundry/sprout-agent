@@ -1,0 +1,146 @@
+name: self-test
+
+# Run the Action end-to-end against a fixture PR. Every push to main
+# triggers this; PRs to main must show green before merging.
+#
+# Fixture repository lives at sprout-foundry/sprout-agent-fixture (public,
+# read-only here) and is owned by the same org. We do NOT mutate it
+# during the test — we just open a fake PR and check the Action's
+# outputs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Keep all runs serial. The Action under test spawns expensive LLM calls;
+# we don't want concurrent runs to interfere with each other.
+concurrency:
+  group: self-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update -y >/dev/null
+          sudo apt-get install -y shellcheck >/dev/null
+
+      - name: Run shellcheck on all .sh files
+        run: |
+          set -e
+          mapfile -t files < <(find scripts src -name '*.sh' -print)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No shell scripts to check"
+            exit 0
+          fi
+          echo "Linting: ${files[*]}"
+          shellcheck -x --severity=warning "${files[@]}"
+
+  action-yml-validate:
+    name: action.yml validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate action.yml
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const yaml = require('js-yaml');
+            const action = yaml.load(fs.readFileSync('action.yml', 'utf8'));
+            if (!action.runs) throw new Error('missing runs');
+            if (!action.runs.using || !action.runs.using.startsWith('composite'))
+              throw new Error('runs.using must be composite');
+            if (!action.runs.steps || !Array.isArray(action.runs.steps))
+              throw new Error('runs.steps must be an array');
+            const step = action.runs.steps[0];
+            if (!step.run) throw new Error('first step must use "run"');
+            console.log(`action.yml OK — ${action.runs.steps.length} step(s), ${Object.keys(action.inputs || {}).length} input(s)`);
+
+  end-to-end:
+    name: End-to-end (review mode)
+    needs: [shellcheck, action-yml-validate]
+    runs-on: ubuntu-latest
+    # Skip E2E on push events from forks; it costs money and we don't
+    # want fork PRs running it.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout fixture repo
+        uses: actions/checkout@v4
+        with:
+          repository: sprout-foundry/sprout-agent-fixture
+          path: fixture
+
+      - name: Checkout sprout-agent (self)
+        uses: actions/checkout@v4
+        with:
+          path: sprout-agent
+
+      - name: Set up Go (for fixture build)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: fixture/go.sum
+
+      - name: Fake a PR number for the Action
+        id: fake-pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // We can't open a real PR during the test (that would
+            // pollute the fixture repo), so we synthesize a PR payload
+            // by writing an event file mimicking what GitHub sends.
+            const fs = require('fs');
+            const payload = {
+              action: 'opened',
+              pull_request: {
+                number: 1,
+                title: 'Test: introduce a deliberate bug for the reviewer to find',
+                body: 'This PR adds a known bug to verify the Action catches it.',
+                state: 'open',
+                base: { ref: 'main' },
+                head: { ref: 'test-branch', sha: process.env.GITHUB_SHA || 'deadbeef' },
+                user: { login: 'sprout-agent[bot]' },
+                html_url: 'https://example.com/fake-pr/1'
+              },
+              repository: { full_name: 'sprout-foundry/sprout-agent-fixture' }
+            };
+            fs.writeFileSync('${{ runner.temp }}/fake_pull_request.json', JSON.stringify(payload));
+            core.setOutput('event-path', '${{ runner.temp }}/fake_pull_request.json');
+
+      - name: Run review mode against fixture
+        id: review
+        uses: ./sprout-agent
+        with:
+          mode: review
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          primary-provider: openai
+          primary-model: gpt-4o-mini
+          timeout-minutes: '5'
+          max-budget-usd: '1.0'
+        env:
+          GITHUB_EVENT_PATH: ${{ steps.fake-pr.outputs.event-path }}
+
+      - name: Assert success=true
+        if: steps.review.outputs.success != 'true'
+        run: |
+          echo "::error::Action did not report success=true"
+          echo "outputs: $(cat ${{ steps.review.outputs.* }})"
+          exit 1
+
+      - name: Show review.json
+        run: |
+          if [ -f review.json ]; then
+            jq . review.json | head -50
+          else
+            echo "::warning::review.json not produced"
+          fi
