@@ -34,8 +34,8 @@ _log_color() {
     fi
 }
 
-log_info()  { _log_color info ; printf '[sprout-agent] %s\n' "$*" ; _log_color reset ; }
-log_ok()    { _log_color ok ; printf '[sprout-agent] %s\n' "$*" ; _log_color reset ; }
+log_info()  { _log_color info ; printf '[sprout-agent] %s\n' "$*" >&2 ; _log_color reset ; }
+log_ok()    { _log_color ok ; printf '[sprout-agent] %s\n' "$*" >&2 ; _log_color reset ; }
 log_warn()  { _log_color warn ; printf '[sprout-agent] %s\n' "$*" >&2 ; _log_color reset ; }
 log_err()   { _log_color err ; printf '[sprout-agent] %s\n' "$*" >&2 ; _log_color reset ; }
 log_debug() { [ "${DEBUG:-false}" = "true" ] && log_info "debug: $*" || true ; }
