@@ -13,6 +13,7 @@ set -euo pipefail
 source "$SPROUT_AGENT_SCRIPTS/common.sh"
 source "$SPROUT_AGENT_MODES/review_lib.sh"
 
+review_main() {
 log_info "Review mode — bootstrapping workflow JSON"
 
 PR_NUMBER=$(event_pr_number)
@@ -113,3 +114,6 @@ emit_output "pr-number=$PR_NUMBER"
 emit_cost_output
 
 [ "$sprout_exit" -eq 0 ] || exit "$sprout_exit"
+}
+
+review_main

@@ -7,12 +7,12 @@
 # comment to surface a structured plan before committing to the heavier
 # fix run.
 #
-# Functions are intentionally defined after their use sites; shellcheck
-# doesn't see the run-time order, so silence the cosmetic warning.
+# shellcheck shell=bash
 # shellcheck disable=SC2218
 set -euo pipefail
 source "$SPROUT_AGENT_SCRIPTS/common.sh"
 
+plan_main() {
 log_info "Plan mode — bootstrapping workflow JSON"
 
 ISSUE_NUMBER=$(event_issue_number)
@@ -29,27 +29,19 @@ fi
 log_info "Planning issue #$ISSUE_NUMBER in $GITHUB_REPOSITORY"
 
 # Reuse the same context-fetcher as fix mode — they need the same info.
-# This avoids duplication; if context-fetch changes for fix, plan benefits.
-SPROUT_RUN_DIR="$SPROUT_RUN_DIR" \
-GITHUB_TOKEN="$GITHUB_TOKEN" \
-GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
-ISSUE_NUMBER="$ISSUE_NUMBER" \
-    fix_fetch_context 2>/dev/null \
-    || {
-        # fix_fetch_context lives in fix.sh — source it on demand so this
-        # script can stand alone.
-        source "$SPROUT_AGENT_MODES/fix.sh" 2>/dev/null || true
-        if declare -f fix_fetch_context >/dev/null; then
-            SPROUT_RUN_DIR="$SPROUT_RUN_DIR" \
-            GITHUB_TOKEN="$GITHUB_TOKEN" \
-            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
-            ISSUE_NUMBER="$ISSUE_NUMBER" \
-                fix_fetch_context
-        else
-            log_err "fix_fetch_context helper unavailable; cannot build context"
-            exit 1
-        fi
-    }
+# We source fix.sh but suppress its main() entry point so only the
+# function definitions are imported.
+SPRUNT_SUPPRESS_MAIN=1 source "$SPROUT_AGENT_MODES/fix.sh" 2>/dev/null || true
+if declare -f fix_fetch_context >/dev/null; then
+    SPROUT_RUN_DIR="$SPROUT_RUN_DIR" \
+    GITHUB_TOKEN="$GITHUB_TOKEN" \
+    GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+    ISSUE_NUMBER="$ISSUE_NUMBER" \
+        fix_fetch_context
+else
+    log_err "fix_fetch_context helper unavailable; cannot build context"
+    exit 1
+fi
 
 WORKFLOW_JSON="$SPROUT_RUN_DIR/workflow.json"
 plan_render_workflow_json "$WORKFLOW_JSON"
@@ -100,6 +92,7 @@ fi
 emit_output "issue-number=$ISSUE_NUMBER"
 emit_cost_output
 [ "$sprout_exit" -eq 0 ] || exit "$sprout_exit"
+}
 
 # -- Mode-internal helpers -------------------------------------------------
 
@@ -148,3 +141,6 @@ plan_post_comment() {
         || log_warn "Failed to post plan comment"
     log_ok "Plan posted to issue #$issue"
 }
+
+# Execute main after all functions are defined.
+plan_main
