@@ -319,7 +319,7 @@ review_post_results() {
     case "$threshold" in
         high)   allowed_severities='["critical"]' ;;
         medium) allowed_severities='["critical","major"]' ;;
-        *)      allowed_severities='["critical","major","minor"]' ;;
+        *)      allowed_severities='["critical","major","minor","suggestion"]' ;;
     esac
     local filtered_count total_count
     total_count=$(printf '%s' "$comments_json" | jq 'length')
