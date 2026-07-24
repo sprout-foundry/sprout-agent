@@ -241,6 +241,8 @@ runs:
         MCP: ${{ inputs.mcp }}
         MAX_BUDGET_USD: ${{ inputs.max-budget-usd }}
         BUDGET_WARN: ${{ inputs.budget-warn }}
+        MAX_ITERATIONS: ${{ inputs.max-iterations }}
+        TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
         REVIEW_TYPE: ${{ inputs.review-type }}
         COMMENT_THRESHOLD: ${{ inputs.comment-threshold }}
       run: ${{ github.action_path }}/scripts/dispatch.sh
