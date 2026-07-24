@@ -178,6 +178,26 @@ emit_output() {
     log_debug "output: $*"
 }
 
+# expand_prompt_template — read a prompt template from $1 and substitute
+# ${VAR} style references using the current environment. The result is
+# printed to stdout.
+#
+# Prompt templates use ${SPROUT_RUN_DIR}, ${PR_NUMBER}, ${ISSUE_NUMBER},
+# ${GITHUB_REPOSITORY}, ${GITHUB_WORKSPACE}, ${BRANCH_NAME} as
+# placeholders. Without this substitution the agent sees literal
+# ${SPROUT_RUN_DIR}/review.json and has to guess the actual path.
+expand_prompt_template() {
+    local template="$1"
+    sed \
+        -e "s|\${SPROUT_RUN_DIR}|${SPROUT_RUN_DIR:-}|g" \
+        -e "s|\${PR_NUMBER}|${PR_NUMBER:-}|g" \
+        -e "s|\${ISSUE_NUMBER}|${ISSUE_NUMBER:-}|g" \
+        -e "s|\${GITHUB_REPOSITORY}|${GITHUB_REPOSITORY:-}|g" \
+        -e "s|\${GITHUB_WORKSPACE}|${GITHUB_WORKSPACE:-}|g" \
+        -e "s|\${BRANCH_NAME}|${BRANCH_NAME:-}|g" \
+        "$template"
+}
+
 # emit_cost_output — extract USD cost from sprout's agent-result JSON and
 # emit it as the `cost` action output.
 #
