@@ -249,12 +249,14 @@ review_render_workflow_json() {
     jq -n \
         --arg provider "$AI_PROVIDER" \
         --arg model    "$AI_MODEL" \
+        --arg repo     "${GITHUB_REPOSITORY:-unknown}" \
+        --arg pr_num   "${PR_NUMBER:-?}" \
         --argjson max  "$EFFECTIVE_MAX_ITERATIONS" \
         --argjson budget "$EFFECTIVE_MAX_BUDGET_USD" \
         --argjson overrides "$overrides" \
         --arg prompt_file "$SPROUT_RUN_DIR/prompt.md" \
         '{
-            description: "PR review for \(env.GITHUB_REPOSITORY) PR #\(env.PR_NUMBER or \"?\")",
+            description: ("PR review for " + $repo + " PR #" + $pr_num),
             no_web_ui: true,
             persist_runtime_overrides: false,
             continue_on_error: true,

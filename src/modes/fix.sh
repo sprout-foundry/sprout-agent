@@ -358,11 +358,13 @@ fix_render_workflow_json() {
         --arg fix_loop  "$prompts_dir/fix_fix_prompt.md" \
         --arg review_json "$run_dir/review.json" \
         --arg build_cmd "$build_cmd" \
+        --arg repo     "${GITHUB_REPOSITORY:-unknown}" \
+        --arg issue    "${ISSUE_NUMBER:-?}" \
         --argjson max  "$EFFECTIVE_MAX_ITERATIONS" \
         --argjson budget "$EFFECTIVE_MAX_BUDGET_USD" \
         --argjson overrides "$overrides" \
         '{
-            description: ("Implement issue " + (env.ISSUE_NUMBER // "?") + " in " + (env.GITHUB_REPOSITORY // "?")),
+            description: ("Implement issue " + $issue + " in " + $repo),
             no_web_ui: true,
             persist_runtime_overrides: false,
             continue_on_error: true,

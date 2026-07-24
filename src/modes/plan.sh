@@ -108,11 +108,13 @@ plan_render_workflow_json() {
     jq -n \
         --arg provider "$AI_PROVIDER" \
         --arg model    "$AI_MODEL" \
+        --arg repo     "${GITHUB_REPOSITORY:-unknown}" \
+        --arg issue    "${ISSUE_NUMBER:-?}" \
         --argjson max  "$EFFECTIVE_MAX_ITERATIONS" \
         --argjson budget "$EFFECTIVE_MAX_BUDGET_USD" \
         --arg prompt_file "$SPROUT_RUN_DIR/prompt.md" \
         '{
-            description: "Plan issue \(env.ISSUE_NUMBER or \"?\") in \(env.GITHUB_REPOSITORY or \"?\")",
+            description: ("Plan issue " + $issue + " in " + $repo),
             no_web_ui: true,
             persist_runtime_overrides: false,
             continue_on_error: true,
