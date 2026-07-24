@@ -251,4 +251,14 @@ runs:
         TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
         REVIEW_TYPE: ${{ inputs.review-type }}
         COMMENT_THRESHOLD: ${{ inputs.comment-threshold }}
+        # Sprout reads provider keys from env, not from api_keys.json. Pass
+        # every key through so the active provider is always authenticated.
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        DEEPINFRA_API_KEY: ${{ inputs.deepinfra-api-key }}
+        ZAI_API_KEY: ${{ inputs.zai-api-key }}
+        CHUTES_API_KEY: ${{ inputs.chutes-api-key }}
+        MISTRAL_API_KEY: ${{ inputs.mistral-api-key }}
+        JINA_API_KEY: ${{ inputs.jina-api-key }}
+        CUSTOM_PROVIDER_API_KEY: ${{ inputs.custom-provider-api-key }}
       run: ${{ github.action_path }}/scripts/dispatch.sh
