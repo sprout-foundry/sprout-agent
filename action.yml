@@ -236,6 +236,12 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         MODE: ${{ inputs.mode }}
+        AI_PROVIDER: ${{ inputs.primary-provider }}
+        AI_MODEL: ${{ inputs.primary-model }}
+        CODER_PROVIDER: ${{ inputs.coder-provider }}
+        CODER_MODEL: ${{ inputs.coder-model }}
+        REVIEWER_PROVIDER: ${{ inputs.reviewer-provider }}
+        REVIEWER_MODEL: ${{ inputs.reviewer-model }}
         TRIGGER_PHRASE: ${{ inputs.trigger-phrase }}
         DEBUG: ${{ inputs.debug }}
         MCP: ${{ inputs.mcp }}
