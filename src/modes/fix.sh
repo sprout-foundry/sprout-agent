@@ -57,10 +57,12 @@ WORKFLOW_JSON="$SPROUT_RUN_DIR/workflow.json"
 fix_render_workflow_json "$WORKFLOW_JSON"
 
 # Compose the prompt. We use --prompt-stdin so the (potentially huge) PR
-# context doesn't get into the OS argv.
+# context doesn't get into the OS argv. We expand ${VAR}-style references
+# the template uses for paths/numbers so the model sees concrete values
+# instead of having to guess what SPROUT_RUN_DIR resolves to.
 PROMPT_FILE="$SPROUT_RUN_DIR/prompt.md"
 {
-    cat "$SPROUT_AGENT_PROMPTS/fix_initial_prompt.md"
+    expand_prompt_template "$SPROUT_AGENT_PROMPTS/fix_initial_prompt.md"
     printf '\n\n## Issue Context\n\n'
     cat "$SPROUT_RUN_DIR/context.md"
 } > "$PROMPT_FILE"

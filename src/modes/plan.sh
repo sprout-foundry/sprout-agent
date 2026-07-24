@@ -56,7 +56,7 @@ plan_render_workflow_json "$WORKFLOW_JSON"
 
 PROMPT_FILE="$SPROUT_RUN_DIR/prompt.md"
 {
-    cat "$SPROUT_AGENT_PROMPTS/plan_prompt.md"
+    expand_prompt_template "$SPROUT_AGENT_PROMPTS/plan_prompt.md"
     printf '\n\n## Issue Context\n\n'
     cat "$SPROUT_RUN_DIR/context.md"
 } > "$PROMPT_FILE"

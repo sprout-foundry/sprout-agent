@@ -204,12 +204,19 @@ review_fetch_context() {
 
     # sed substitution. We anchor with %%...%% markers so they don't collide
     # with prose in the prompt that happens to use ${...} syntax. Using |
-    # as the sed delimiter keeps slashes in prose untouched.
+    # as the sed delimiter keeps slashes in prose untouched. We also expand
+    # the ${VAR}-style references the template uses for paths/numbers, so
+    # the model sees a fully-rendered prompt with concrete paths instead
+    # of having to guess what SPROUT_RUN_DIR resolves to.
     local prompt_body
     prompt_body=$(cat "$SPROUT_AGENT_PROMPTS/review_initial_prompt.md")
     prompt_body=$(printf '%s' "$prompt_body" | sed \
         -e "s|%%REVIEW_TYPE_PARAGRAPH%%|$rt_para|g" \
-        -e "s|%%COMMENT_THRESHOLD_PARAGRAPH%%|$ct_para|g")
+        -e "s|%%COMMENT_THRESHOLD_PARAGRAPH%%|$ct_para|g" \
+        -e "s|\${SPROUT_RUN_DIR}|$out|g" \
+        -e "s|\${PR_NUMBER}|$pr_number|g" \
+        -e "s|\${GITHUB_REPOSITORY}|$repo|g" \
+        -e "s|\${GITHUB_WORKSPACE}|${GITHUB_WORKSPACE:-}|g")
     {
         printf '%s' "$prompt_body"
         printf '\n\n## Context\n\n'
