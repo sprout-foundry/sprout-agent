@@ -77,7 +77,11 @@ inputs:
     required: false
     default: ''
   zai-api-key:
-    description: 'Z.AI API key'
+    description: 'Z.AI API key (regular API endpoint)'
+    required: false
+    default: ''
+  zai-coding-api-key:
+    description: 'Z.AI Coding Plan API key (coding endpoint, separate from regular API). Set this when using the zai-coding provider.'
     required: false
     default: ''
   chutes-api-key:
@@ -214,6 +218,7 @@ runs:
         OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
         DEEPINFRA_API_KEY: ${{ inputs.deepinfra-api-key }}
         ZAI_API_KEY: ${{ inputs.zai-api-key }}
+        ZAI_CODING_API_KEY: ${{ inputs.zai-coding-api-key }}
         CHUTES_API_KEY: ${{ inputs.chutes-api-key }}
         MISTRAL_API_KEY: ${{ inputs.mistral-api-key }}
         JINA_API_KEY: ${{ inputs.jina-api-key }}
@@ -257,6 +262,7 @@ runs:
         OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
         DEEPINFRA_API_KEY: ${{ inputs.deepinfra-api-key }}
         ZAI_API_KEY: ${{ inputs.zai-api-key }}
+        ZAI_CODING_API_KEY: ${{ inputs.zai-coding-api-key }}
         CHUTES_API_KEY: ${{ inputs.chutes-api-key }}
         MISTRAL_API_KEY: ${{ inputs.mistral-api-key }}
         JINA_API_KEY: ${{ inputs.jina-api-key }}

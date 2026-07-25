@@ -40,6 +40,7 @@ jq -n \
     --arg openrouter "${OPENROUTER_API_KEY:-}" \
     --arg deepinfra  "${DEEPINFRA_API_KEY:-}"  \
     --arg zai        "${ZAI_API_KEY:-}"        \
+    --arg zaicoding  "${ZAI_CODING_API_KEY:-}"  \
     --arg chutes     "${CHUTES_API_KEY:-}"     \
     --arg mistral    "${MISTRAL_API_KEY:-}"    \
     --arg jinaai     "${JINA_API_KEY:-}"       \
@@ -50,6 +51,7 @@ jq -n \
         openrouter: $openrouter,
         deepinfra:  $deepinfra,
         zai:        $zai,
+        "zai-coding": $zaicoding,
         chutes:     $chutes,
         mistral:    $mistral,
         jinaai:     $jinaai
@@ -160,7 +162,7 @@ log_debug "subagent overrides — coder: ${CODER_PROVIDER:-<unset>}/${CODER_MODE
 # ---------------------------------------------------------------------------
 log_info "Building provider_priority.txt..."
 
-PROVIDER_ORDER=(openrouter openai deepinfra chutes zai mistral jinaai)
+PROVIDER_ORDER=(openrouter openai deepinfra chutes zai zai-coding mistral jinaai)
 PROVIDER_PRIORITY=()
 
 # If the user set a primary, put it first (only if we have a key).
@@ -168,6 +170,11 @@ PROVIDER_PRIORITY=()
 # custom providers use CUSTOM_PROVIDER_API_KEY.
 if [ -n "${AI_PROVIDER:-}" ]; then
     case "$AI_PROVIDER" in
+        zai-coding)
+            if [ -n "${ZAI_CODING_API_KEY:-}" ]; then
+                PROVIDER_PRIORITY+=("$AI_PROVIDER")
+            fi
+            ;;
         openai|openrouter|deepinfra|chutes|zai|mistral|jinaai)
             if [ -n "$(eval printf '%s' "\${${AI_PROVIDER^^}_API_KEY:-}")" ]; then
                 PROVIDER_PRIORITY+=("$AI_PROVIDER")
@@ -194,6 +201,7 @@ for p in "${PROVIDER_ORDER[@]}"; do
         deepinfra)  [ -n "${DEEPINFRA_API_KEY:-}"  ] && PROVIDER_PRIORITY+=("$p") ;;
         chutes)     [ -n "${CHUTES_API_KEY:-}"     ] && PROVIDER_PRIORITY+=("$p") ;;
         zai)        [ -n "${ZAI_API_KEY:-}"        ] && PROVIDER_PRIORITY+=("$p") ;;
+        zai-coding) [ -n "${ZAI_CODING_API_KEY:-}" ] && PROVIDER_PRIORITY+=("$p") ;;
         mistral)    [ -n "${MISTRAL_API_KEY:-}"    ] && PROVIDER_PRIORITY+=("$p") ;;
         jinaai)     [ -n "${JINA_API_KEY:-}"       ] && PROVIDER_PRIORITY+=("$p") ;;
     esac
