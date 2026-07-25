@@ -33,7 +33,15 @@ ensure_go() {
 resolve_latest_version() {
     log_info "Resolving latest sprout release..."
     local response tag
+    # Use GITHUB_TOKEN for authenticated rate limits (5000/hr vs 60/hr
+    # unauthenticated). GitHub Actions runners share IPs, so the
+    # unauthenticated limit is easily exhausted by concurrent workflows.
+    local auth=()
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        auth=(-H "authorization: Bearer $GITHUB_TOKEN")
+    fi
     if ! response=$(curl --fail --show-error --silent --max-time 30 \
+        "${auth[@]}" \
         "https://api.github.com/repos/sprout-foundry/sprout/releases/latest"); then
         log_err "Could not reach the GitHub releases API."
         log_err "Pin a version explicitly: install-sprout.sh v0.14.0"
