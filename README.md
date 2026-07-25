@@ -35,7 +35,7 @@ jobs:
 | Mode | Trigger | What it does |
 |------|---------|-------------|
 | `review` (default) | `pull_request` | Reviews the diff and posts inline comments + verdict (APPROVE / REQUEST_CHANGES / COMMENT). Does not modify code. |
-| `fix` | Issue comment `/sprout-fix` or `workflow_dispatch` | Reads an issue, creates a branch, implements the change, opens a PR. |
+| `fix` | Comment `/sprout-fix` on an issue **or** a PR | **Issue**: reads the issue, creates a branch, implements the change, opens a PR. **PR**: reads review findings and comments, checks out the PR branch, fixes issues, pushes to the same PR. |
 | `plan` | Issue comment `/sprout-plan` or `workflow_dispatch` | Reads an issue and posts a structured implementation plan as a comment. |
 
 ## Inputs
@@ -115,18 +115,8 @@ jobs:
 - run: echo "Cost: ${{ steps.sprout.outputs.cost }}, PR: ${{ steps.sprout.outputs.pr-url }}"
 ```
 
-## Migration from ledit-agent
-
-See [MIGRATION.md](MIGRATION.md) for the full input rename table. Key changes:
-
-- `ai-provider` → `primary-provider`
-- `ai-model` → `primary-model`
-- `mode: solve` → `mode: fix`
-- Provider keys now passed as inputs (not just env vars)
-- `subagent-coder-provider` → `coder-provider` (plus `reviewer-provider`)
-
 ## Security
 
 - The action needs `contents: write` for `fix` mode (pushes commits). `review` and `plan` need `contents: read` only.
-- `fix` mode creates a branch named `issue/<N>` and pushes commits. Pin `max-budget-usd` low for untrusted repos.
+- `fix` mode on an **issue** creates a branch named `issue/<N>` and opens a new PR. On a **PR** it commits directly to the PR's existing branch. Pin `max-budget-usd` low for untrusted repos.
 - Self-PR detection: the action downgrades `APPROVE` / `REQUEST_CHANGES` to `COMMENT` when reviewing its own PRs.

@@ -9,7 +9,6 @@ Thumbs.db
 # Sprout agent run artifacts (keep working dir clean)
 .sprout/
 .sprout-run.json
-*.ledit-*.md
 
 # Logs
 *.log

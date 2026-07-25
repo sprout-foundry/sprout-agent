@@ -168,6 +168,91 @@ event_comment_body() {
     jq -r '.comment.body // empty' "$event_path" 2>/dev/null || echo ""
 }
 
+# detect_fix_context — inspect the GitHub event payload and set globals
+# that fix.sh uses to decide its behavior. This is what makes /sprout-fix
+# context-aware: the same command does the right thing whether the user
+# typed it on an issue or a PR.
+#
+# Sets:
+#   FIX_TARGET         — "issue" or "pr"
+#   FIX_NUMBER         — the issue or PR number (string)
+#   FIX_BRANCH         — the branch to work on
+#                        (issue: issue/NNN, pr: the PR's head ref)
+#   FIX_TRIGGER_COMMENT — the raw text of the triggering comment (may be
+#                         empty for events without a comment)
+#
+# For PR mode, FIX_BRANCH is resolved lazily — it's set to the literal
+# string "PR_HEAD" and fix_fetch_pr_context() fills in the actual ref
+# after an API call. This avoids a second API roundtrip in common.sh.
+detect_fix_context() {
+    local event_name="${GITHUB_EVENT_NAME:-}"
+    local event_path="${GITHUB_EVENT_PATH:-}"
+    FIX_TRIGGER_COMMENT="$(event_comment_body)"
+
+    local is_pr="false"
+    if [ -n "$event_path" ]; then
+        # issue_comment events fire on both issues and PRs. The
+        # .issue.pull_request field distinguishes them.
+        case "$event_name" in
+            issue_comment)
+                is_pr=$(jq -r 'if (.issue.pull_request // null) != null then "true" else "false" end' "$event_path")
+                ;;
+            pull_request_review_comment)
+                is_pr="true"
+                ;;
+            pull_request)
+                is_pr="true"
+                ;;
+        esac
+    fi
+
+    if [ "$is_pr" = "true" ]; then
+        FIX_TARGET="pr"
+        FIX_NUMBER=$(event_pr_number)
+        # FIX_BRANCH is resolved by fix_fetch_pr_context() after the API
+        # call that fetches the PR metadata. We set a sentinel so the
+        # caller knows it needs resolution.
+        FIX_BRANCH=""
+    else
+        FIX_TARGET="issue"
+        FIX_NUMBER=$(event_issue_number)
+        FIX_BRANCH="issue/${FIX_NUMBER}"
+    fi
+
+    export FIX_TARGET FIX_NUMBER FIX_BRANCH FIX_TRIGGER_COMMENT
+    log_info "Fix context: target=$FIX_TARGET, number=$FIX_NUMBER, branch=${FIX_BRANCH:-<pending>}"
+}
+
+# Resolve the PR head ref via the GitHub API. Called by fix.sh after
+# detect_fix_context() when FIX_TARGET=pr. Returns the ref name (e.g.
+# "feature/auth-fix"). Exits 1 on failure.
+resolve_pr_head_ref() {
+    local repo="$GITHUB_REPOSITORY"
+    local token="$GITHUB_TOKEN"
+    local pr="${FIX_NUMBER:-}"
+    local hdr=()
+    [ -n "$token" ] && hdr=(-H "authorization: Bearer $token")
+
+    if [ -z "$pr" ] || ! [[ "$pr" =~ ^[0-9]+$ ]]; then
+        log_err "Cannot resolve PR head ref: invalid PR number '$pr'"
+        return 1
+    fi
+
+    local meta ref
+    if ! meta=$(curl --fail --show-error --silent --max-time 30 \
+        "${hdr[@]}" \
+        "https://api.github.com/repos/${repo}/pulls/${pr}"); then
+        log_err "Failed to fetch PR #$pr metadata for head ref resolution"
+        return 1
+    fi
+    ref=$(printf '%s' "$meta" | jq -r '.head.ref')
+    if [ -z "$ref" ] || [ "$ref" = "null" ]; then
+        log_err "PR #$pr has no head.ref in API response"
+        return 1
+    fi
+    printf '%s' "$ref"
+}
+
 # Emit a `$GITHUB_OUTPUT` line. Multiple invocations append, so callers
 # inside loops should group values. Bash is fine because we never need
 # JSON encoding — these are all scalars.
