@@ -68,6 +68,9 @@ the PR.
 
 - DO NOT comment on style preferences or conventions unless they cause bugs.
 - DO NOT include positive feedback ("nice catch", "good naming", etc.).
+- DO NOT collapse findings into the summary as prose. Every verified issue
+  MUST be a structured comments[] entry with file, line, severity, and body.
+  The summary is a one-sentence overview, not a substitute for comments[].
 - DO NOT exceed the max-comments cap:
   - 1–10 lines: 1 comment max
   - 10–50 lines: 3 comments max

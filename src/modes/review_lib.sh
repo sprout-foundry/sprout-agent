@@ -192,13 +192,13 @@ review_fetch_context() {
     esac
     case "$ct" in
         high)
-            ct_para="**Comment threshold: high.** Post inline comments ONLY for critical issues (production crashes, data loss, immediately exploitable security vulnerabilities). Otherwise post the summary as a single PR comment."
+            ct_para="**Comment threshold: high.** Create comments[] entries for ALL verified findings (critical, major, minor, suggestion) — always as structured entries with file, line, severity, and body. The posting system will filter and only post critical-severity issues as inline annotations; the rest appear in the summary. Do NOT collapse findings into prose — always structure them as comments[] entries first."
             ;;
         medium)
-            ct_para="**Comment threshold: medium.** Post inline comments for critical AND major issues (real bugs, security vulnerabilities, significant performance regressions, logic errors)."
+            ct_para="**Comment threshold: medium.** Create comments[] entries for ALL verified findings (critical, major, minor, suggestion) — always as structured entries with file, line, severity, and body. The posting system will filter and only post critical and major issues as inline annotations; the rest appear in the summary. Do NOT collapse findings into prose — always structure them as comments[] entries first."
             ;;
         *)
-            ct_para="**Comment threshold: low.** Post inline comments for critical, major, AND minor issues (including code-quality concerns that need fixing)."
+            ct_para="**Comment threshold: low.** Create comments[] entries for ALL verified findings (critical, major, minor, suggestion) — always as structured entries with file, line, severity, and body. All of them will be posted as inline annotations."
             ;;
     esac
 
