@@ -80,23 +80,107 @@ fi
 # Pass the user prompt via stdin so we never hit the OS ARG_MAX limit.
 # sprout's --prompt-stdin flag reads the full body from stdin, which lets
 # us embed a multi-KB PR context without quoting headaches.
-( cd "$GITHUB_WORKSPACE" \
-  && timeout "${EFFECTIVE_TIMEOUT_MINUTES}m" \
-       sprout agent \
-           --workflow-config "$WORKFLOW_JSON" \
-           --no-web-ui \
-           --no-stream \
-           --persona reviewer \
-           --skip-prompt \
-           --max-iterations "$EFFECTIVE_MAX_ITERATIONS" \
-           --budget-usd "$EFFECTIVE_MAX_BUDGET_USD" \
-           --budget-warn "$EFFECTIVE_BUDGET_WARN" \
-           --output-json \
-           --output-path "$SPROUT_RUN_DIR/agent-result.json" \
-           --prompt-stdin \
-       < "$SPROUT_RUN_DIR/prompt.md" )
-sprout_exit=$?
+run_sprout_agent() {
+    local prompt_file="$1"
+    ( cd "$GITHUB_WORKSPACE" \
+      && timeout "${EFFECTIVE_TIMEOUT_MINUTES}m" \
+           sprout agent \
+               --workflow-config "$WORKFLOW_JSON" \
+               --no-web-ui \
+               --no-stream \
+               --persona reviewer \
+               --skip-prompt \
+               --max-iterations "$EFFECTIVE_MAX_ITERATIONS" \
+               --budget-usd "$EFFECTIVE_MAX_BUDGET_USD" \
+               --budget-warn "$EFFECTIVE_BUDGET_WARN" \
+               --output-json \
+               --output-path "$SPROUT_RUN_DIR/agent-result.json" \
+               --prompt-stdin \
+           < "$prompt_file" )
+    return $?
+}
 
+run_sprout_agent "$SPROUT_RUN_DIR/prompt.md" && sprout_exit=0 || sprout_exit=$?
+
+# ── Validate-and-retry loop ──────────────────────────────────────────
+#
+# The agent may produce a malformed review.json — truncated output,
+# markdown fences wrapping the JSON, extra prose before/after the JSON,
+# or missing required fields. Instead of failing immediately, we validate
+# the output and give the agent one retry with a corrective prompt that
+# includes the specific validation error and a preview of the bad file.
+# This catches the common failure where the model writes valid JSON but
+# with schema issues (e.g., line as string instead of number, missing
+# comments array).
+
+MAX_REVIEW_RETRIES=1
+retry_count=0
+
+while [ "$retry_count" -le "$MAX_REVIEW_RETRIES" ]; do
+    validation_error=""
+    if [ ! -f "$REVIEW_JSON" ]; then
+        validation_error="review.json was not created."
+    else
+        validation_error=$(review_validate_json "$REVIEW_JSON") || true
+        if [ -z "$validation_error" ]; then
+            break  # Valid — proceed to post
+        fi
+    fi
+
+    if [ "$retry_count" -lt "$MAX_REVIEW_RETRIES" ]; then
+        log_warn "review.json validation failed (attempt $((retry_count + 1))/$((MAX_REVIEW_RETRIES + 1))): $validation_error"
+        log_info "Feeding validation error back to agent for corrective rewrite..."
+
+        # Build a corrective prompt: the error + explicit instructions to
+        # re-write just the review.json file correctly.
+        local corrective_prompt="$SPROUT_RUN_DIR/corrective_prompt_${retry_count}.md"
+        cat > "$corrective_prompt" <<CORRECTIVE_EOF
+The review.json file you wrote failed validation. Fix it and re-write the file.
+
+## Validation Error
+
+${validation_error}
+
+## Instructions
+
+Read the current content of ${REVIEW_JSON} to see what went wrong, then use
+write_file to overwrite it with valid JSON.
+
+The file MUST be valid JSON (no markdown fences, no prose before or after)
+with this exact schema:
+
+\`\`\`json
+{
+  "summary": "One sentence string.",
+  "approval_status": "approve" | "request_changes" | "comment",
+  "comments": [
+    {
+      "file": "path/to/file",
+      "line": 42,
+      "body": "Issue description",
+      "severity": "critical" | "major" | "minor" | "suggestion"
+    }
+  ]
+}
+\`\`\`
+
+If you found no issues earlier, write: {"summary": "No issues found.", "approval_status": "approve", "comments": []}
+
+Write ONLY valid JSON to ${REVIEW_JSON} — no markdown fences, no commentary.
+CORRECTIVE_EOF
+
+        run_sprout_agent "$corrective_prompt" && sprout_exit=0 || sprout_exit=$?
+        retry_count=$((retry_count + 1))
+    else
+        # Final attempt failed — log and continue to post (which will
+        # also validate, but we let review_post_results handle the final
+        # error message).
+        log_err "review.json still invalid after ${MAX_REVIEW_RETRIES} retries: $validation_error"
+        retry_count=$((retry_count + 1))
+    fi
+done
+
+# ── Post results ─────────────────────────────────────────────────────
 # Post the review results regardless of sprout's exit code — the model
 # may have produced valid review.json even if it timed out at the very end,
 # and we don't want to lose those comments.

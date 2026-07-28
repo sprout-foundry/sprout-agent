@@ -305,7 +305,13 @@ review_post_results() {
     local hdr=(-H "authorization: Bearer $token" -H "accept: application/vnd.github+json")
 
     if ! jq -e . "$review_json" >/dev/null 2>&1; then
-        log_err "review.json is invalid; skipping post"
+        log_err "review.json is invalid JSON; skipping post"
+        return 1
+    fi
+    local schema_err
+    schema_err=$(review_validate_json "$review_json") || true
+    if [ -n "$schema_err" ]; then
+        log_err "review.json failed schema validation; skipping post: $schema_err"
         return 1
     fi
 
@@ -473,4 +479,81 @@ check_missing_diff_files() {
     done < <(grep -E '^\+\+\+ ' "$diff" | grep -v '^+++ /dev/null' || true)
 
     [ "$missing" -gt 0 ]
+}
+
+# review_validate_json — validate review.json beyond basic JSON syntax.
+#
+# Checks that the file exists, is valid JSON, and has the required schema
+# shape: summary (string), approval_status (valid enum), comments (array
+# of objects with required fields). Returns 0 if valid, 1 otherwise.
+# On failure, writes a human-readable error message to stdout (captured
+# by the caller for the corrective feedback prompt).
+#
+# Usage: review_validate_json <review_json_path>
+# Output: validation error message on stdout (empty if valid)
+# Return: 0 = valid, 1 = invalid
+review_validate_json() {
+    local review_json="$1"
+
+    # 1. File exists and is non-empty
+    if [ ! -s "$review_json" ]; then
+        echo "review.json is missing or empty. The write_file call must have failed."
+        return 1
+    fi
+
+    # 2. Valid JSON syntax
+    local parse_err
+    if ! parse_err=$(jq -e . "$review_json" 2>&1 >/dev/null); then
+        # Extract just the parse error line(s) for a concise message
+        local err_line
+        err_line=$(printf '%s' "$parse_err" | head -3 | tr '\n' ' ' | sed 's/  */ /g')
+        # Also grab the actual file content (truncated) so the model can see what went wrong
+        local file_preview
+        file_preview=$(head -c 500 "$review_json" 2>/dev/null)
+        echo "review.json is not valid JSON. jq parse error: ${err_line}. File content (first 500 chars): ${file_preview}"
+        return 1
+    fi
+
+    # 3. Required top-level fields exist with correct types
+    local schema_err=""
+
+    # summary must be a string
+    if ! jq -e '(.summary | type) == "string"' "$review_json" >/dev/null 2>&1; then
+        schema_err="${schema_err} Field 'summary' must be a string."
+    fi
+
+    # approval_status must be one of the allowed values (or absent → defaults to comment)
+    local approval
+    approval=$(jq -r '.approval_status // "comment"' "$review_json")
+    case "$approval" in
+        approve|request_changes|comment) ;;
+        *) schema_err="${schema_err} Field 'approval_status' must be one of: approve, request_changes, comment (got '${approval}')." ;;
+    esac
+
+    # comments must be an array
+    if ! jq -e '(.comments | type) == "array"' "$review_json" >/dev/null 2>&1; then
+        schema_err="${schema_err} Field 'comments' must be an array."
+    else
+        # Each comment must have file (string), line (number), body (string), severity (valid)
+        local comment_count bad_comments=0
+        comment_count=$(jq '.comments | length' "$review_json")
+        if [ "$comment_count" -gt 0 ]; then
+            bad_comments=$(jq '[.comments[] | select(
+                (.file | type) != "string" or
+                (.line | type) != "number" or
+                (.body | type) != "string" or
+                ((.severity // "major") | IN("critical","major","minor","suggestion") | not)
+            )] | length' "$review_json" 2>/dev/null || echo "$comment_count")
+            if [ "$bad_comments" -gt 0 ]; then
+                schema_err="${schema_err} ${bad_comments}/${comment_count} comments have missing or invalid fields (each needs: file:string, line:number, body:string, severity:one-of-critical/major/minor/suggestion)."
+            fi
+        fi
+    fi
+
+    if [ -n "$schema_err" ]; then
+        echo "review.json failed schema validation:${schema_err}"
+        return 1
+    fi
+
+    return 0
 }
