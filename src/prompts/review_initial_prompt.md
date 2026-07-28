@@ -40,7 +40,7 @@ another tool, so your response MUST end with a call that writes both
 
 At the end of your run, use the `write_file` tool to write two files:
 
-### `${SPROUT_RUN_DIR}/review.json`
+### Step 1: Write `${SPROUT_RUN_DIR}/review.json`
 
 ```json
 {
@@ -59,7 +59,22 @@ At the end of your run, use the `write_file` tool to write two files:
 }
 ```
 
-### `${SPROUT_RUN_DIR}/summary.md`
+The JSON MUST be syntactically valid and parseable by `jq`. Do NOT wrap it
+in markdown fences. Do NOT add prose before or after the JSON object.
+
+### Step 2: Self-check with shell_command
+
+**Immediately after writing the file**, validate it by running:
+
+```bash
+jq -e '{summary: (.summary|type=="string"), approval_status: (.approval_status|IN("approve","request_changes","comment")), comments: (.comments|type=="array" and all(.[]; (.file|type=="string") and (.line|type=="number") and (.body|type=="string")))}' ${SPROUT_RUN_DIR}/review.json
+```
+
+If this command exits non-zero or prints `false` for any field, the JSON is
+malformed. **Read the file back, identify the problem, re-write it, and
+re-run the check.** Do not proceed to step 3 until validation passes.
+
+### Step 3: Write `${SPROUT_RUN_DIR}/summary.md`
 
 A 2–3 sentence human-readable summary. This gets posted as a comment on
 the PR.
