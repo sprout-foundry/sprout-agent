@@ -71,6 +71,7 @@ jobs:
 | `reviewer-provider` / `reviewer-model` | (= primary) | Route the reviewer subagent to a different provider/model. |
 | `review-type` | `comprehensive` | Review focus: `comprehensive`, `security`, or `performance`. |
 | `comment-threshold` | `medium` | Inline comment severity floor: `high` (critical only), `medium` (+major), `low` (+minor/suggestion). |
+| `detailed-summary` | `false` | Enable structured overview summary using markdown formatting (bullets, bold) for a quick-glance read. Default is a concise one-sentence summary. |
 | `max-iterations` | mode-specific | 120 for review, 240 for fix, 60 for plan. |
 | `max-budget-usd` | `2.00` (review), `8.00` (fix) | Hard cap on LLM spend. |
 | `budget-warn` | `0.5,0.8` | Warn at 50% and 80% of budget. |

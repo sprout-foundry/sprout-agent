@@ -132,6 +132,10 @@ inputs:
     description: 'Inline-comment severity floor: high (critical only) | medium (+major, default) | low (+minor/suggestion).'
     required: false
     default: 'medium'
+  detailed-summary:
+    description: 'Enable structured overview summary with markdown formatting (default: false for concise one-sentence summary).'
+    required: false
+    default: 'false'
 
   # -------------------------------------------------------------------------
   # Workflow tuning
@@ -235,6 +239,7 @@ runs:
         MCP: ${{ inputs.mcp }}
         DEBUG: ${{ inputs.debug }}
         MODE: ${{ inputs.mode }}
+        DETAILED_SUMMARY: ${{ inputs.detailed-summary }}
       run: ${{ github.action_path }}/scripts/configure-sprout.sh
 
     - name: Run workflow based on mode
@@ -258,6 +263,7 @@ runs:
         TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
         REVIEW_TYPE: ${{ inputs.review-type }}
         COMMENT_THRESHOLD: ${{ inputs.comment-threshold }}
+        DETAILED_SUMMARY: ${{ inputs.detailed-summary }}
         # Sprout reads provider keys from env, not from api_keys.json. Pass
         # every key through so the active provider is always authenticated.
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}

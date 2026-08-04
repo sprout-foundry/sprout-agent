@@ -32,6 +32,10 @@ another tool, so your response MUST end with a call that writes both
 
 %%COMMENT_THRESHOLD_PARAGRAPH%%
 
+## Detailed summary mode
+
+%%DETAILED_SUMMARY_PARAGRAPH%%
+
 ## Review focus
 
 %%REVIEW_TYPE_PARAGRAPH%%
@@ -44,7 +48,7 @@ At the end of your run, use the `write_file` tool to write two files:
 
 ```json
 {
-  "summary": "One sentence: what you found.",
+  "summary": "One sentence (concise mode) or structured overview (detailed mode): what you found.",
   "approval_status": "approve | request_changes | comment",
   "comments": [
     {
@@ -76,8 +80,9 @@ re-run the check.** Do not proceed to step 3 until validation passes.
 
 ### Step 3: Write `${SPROUT_RUN_DIR}/summary.md`
 
-A 2–3 sentence human-readable summary. This gets posted as a comment on
-the PR.
+**Concise mode (default):** A 2–3 sentence human-readable summary that captures the essence of your findings. This gets posted as a comment on the PR.
+
+**Detailed mode:** A structured overview using markdown formatting (bullets, bold) for a quick-glance read. Cover: overall assessment of the PR, recurring themes or patterns across findings, and severity distribution. Do NOT rehash individual inline comments — the comments[] array already covers those. Be as concise as the content warrants; do not pad to fill space.
 
 ## Anti-patterns — do NOT do these
 
@@ -85,7 +90,7 @@ the PR.
 - DO NOT include positive feedback ("nice catch", "good naming", etc.).
 - DO NOT collapse findings into the summary as prose. Every verified issue
   MUST be a structured comments[] entry with file, line, severity, and body.
-  The summary is a one-sentence overview, not a substitute for comments[].
+  The summary is an overview, not a substitute for comments[].
 - DO NOT exceed the max-comments cap:
   - 1–10 lines: 1 comment max
   - 10–50 lines: 3 comments max

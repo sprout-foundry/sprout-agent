@@ -162,12 +162,12 @@ review_fetch_context() {
 
     # Render prompt.md — what the model actually receives.
     #
-    # We substitute REVIEW_TYPE and COMMENT_THRESHOLD into the prompt so
-    # the reviewer sees them inline as part of its instructions, not as
-    # ambient env vars. Inline text is more reliable than env-var lookups
-    # inside an LLM. The prompt template's placeholders are
-    # ${REVIEW_TYPE_PARAGRAPH} and ${COMMENT_THRESHOLD_PARAGRAPH}; both
-    # are filled with a one-paragraph guidance block.
+    # We substitute REVIEW_TYPE, COMMENT_THRESHOLD, and DETAILED_SUMMARY into
+    # the prompt so the reviewer sees them inline as part of its instructions,
+    # not as ambient env vars. Inline text is more reliable than env-var
+    # lookups inside an LLM. The prompt template's placeholders are
+    # ${REVIEW_TYPE_PARAGRAPH}, ${COMMENT_THRESHOLD_PARAGRAPH}, and
+    # ${DETAILED_SUMMARY_PARAGRAPH}; all are filled with guidance blocks.
     local rt="${REVIEW_TYPE:-comprehensive}"
     case "$rt" in
         comprehensive|security|performance) ;;
@@ -178,7 +178,12 @@ review_fetch_context() {
         high|medium|low) ;;
         *) log_warn "Unknown COMMENT_THRESHOLD='$ct'; falling back to 'medium'"; ct="medium" ;;
     esac
-    local rt_para ct_para
+    local ds="${DETAILED_SUMMARY:-false}"
+    case "$ds" in
+        true|yes|1) ;;
+        *) ds="false" ;;
+    esac
+    local rt_para ct_para ds_para
     case "$rt" in
         security)
             rt_para="**Review focus: security.** Prioritise vulnerabilities (auth/authz bypasses, injection, secrets, SSRF, deserialization, dependency CVEs, supply-chain risks). Other categories are out of scope for this review."
@@ -201,6 +206,14 @@ review_fetch_context() {
             ct_para="**Comment threshold: low.** Create comments[] entries for ALL verified findings (critical, major, minor, suggestion) — always as structured entries with file, line, severity, and body. All of them will be posted as inline annotations."
             ;;
     esac
+    case "$ds" in
+        true|yes|1)
+            ds_para="**Detailed summary mode: ENABLED.** The summary field in review.json should be a structured overview using markdown (bullets, bold) for a quick-glance read. Cover: overall assessment, themes or patterns across the PR, and severity distribution. Do NOT rehash individual inline comments — the comments[] array already has those. Be as concise as the content warrants; do not pad to fill space. Comments[] must still be written for every specific issue."
+            ;;
+        *)
+            ds_para="**Detailed summary mode: DISABLED.** Write a concise one-sentence summary that captures the essence of your findings. The summary is a quick overview, not a substitute for comments[]. All verified issues MUST be structured comments[] entries with file, line, severity, and body."
+            ;;
+    esac
 
     # sed substitution. We anchor with %%...%% markers so they don't collide
     # with prose in the prompt that happens to use ${...} syntax. Using |
@@ -213,6 +226,7 @@ review_fetch_context() {
     prompt_body=$(printf '%s' "$prompt_body" | sed \
         -e "s|%%REVIEW_TYPE_PARAGRAPH%%|$rt_para|g" \
         -e "s|%%COMMENT_THRESHOLD_PARAGRAPH%%|$ct_para|g" \
+        -e "s|%%DETAILED_SUMMARY_PARAGRAPH%%|$ds_para|g" \
         -e "s|\${SPROUT_RUN_DIR}|$out|g" \
         -e "s|\${PR_NUMBER}|$pr_number|g" \
         -e "s|\${GITHUB_REPOSITORY}|$repo|g" \
@@ -223,7 +237,7 @@ review_fetch_context() {
         cat "$out/context.md"
     } > "$out/prompt.md"
 
-    log_ok "Context ready ($(wc -c < "$out/context.md") bytes; diff: $diff_lines lines; review_type=$rt; threshold=$ct)"
+    log_ok "Context ready ($(wc -c < "$out/context.md") bytes; diff: $diff_lines lines; review_type=$rt; threshold=$ct; detailed_summary=$ds)"
 }
 
 # review_render_workflow_json — write $1 as the AgentWorkflowConfig for review.
