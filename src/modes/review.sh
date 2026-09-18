@@ -59,8 +59,13 @@ review_render_workflow_json "$WORKFLOW_JSON"
 # surface this loudly so the reviewer doesn't waste tokens thinking the
 # PR is empty.
 if check_missing_diff_files "$SPROUT_RUN_DIR/full.diff"; then
-    log_warn "Some files added in this PR are missing from the checkout."
-    log_warn "Update your checkout step to: ref: \${{ github.event.pull_request.head.ref }}"
+    log_err "Some files added in this PR are missing from the checkout."
+    log_err "A review that cannot open the changed files cannot be trusted; refusing to post one."
+    log_err "Fix the checkout step: ref: \${{ github.event.pull_request.head.ref }} —"
+    log_err "for issue_comment-triggered runs, resolve the head ref from the PR API first"
+    log_err "(that event carries no head.ref; an empty ref checks out the default branch)."
+    emit_output "success=false"
+    exit 1
 fi
 
 log_info "Invoking sprout agent..."
