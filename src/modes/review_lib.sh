@@ -61,14 +61,30 @@ review_fetch_context() {
 
     log_info "PR: $title (state=$state, base=$base, head=$sha, author=$author)"
 
-    # Unified diff. Prefer git on-disk (cheap, paginated by context lines)
-    # over the API .diff endpoint which counts in API quota. We fall back
-    # to the API endpoint if the local repo doesn't have both refs.
+    # Unified diff. Prefer git on-disk (cheap, no API quota, no GitHub's
+    # 20k-line .diff cap) over the API .diff endpoint. We fall back to the
+    # API endpoint only when the local repo can't produce the diff.
     local diff_file="$out/full.diff"
     if [ -d "$GITHUB_WORKSPACE/.git" ] && \
        git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "$sha" >/dev/null 2>&1; then
         log_info "Computing diff via git (cheap path)..."
-        if ! git -C "$GITHUB_WORKSPACE" diff --unified=3 "${base}...${sha}" > "$diff_file" 2>/dev/null; then
+        # The checkout materializes only the head branch locally; the base
+        # branch usually exists only as refs/remotes/origin/<base>, so a
+        # bare "$base" fails to resolve and the diff would always take the
+        # API fallback (which 406s on large diffs). Resolve the base ref:
+        # local name first, then the remote ref, fetching on demand.
+        local base_ref="$base"
+        if ! git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "$base_ref" >/dev/null 2>&1; then
+            base_ref="origin/$base"
+        fi
+        if ! git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "$base_ref" >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" fetch --no-tags origin "$base" >/dev/null 2>&1 || true
+            base_ref="origin/$base"
+        fi
+        if git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "$base_ref" >/dev/null 2>&1 && \
+           git -C "$GITHUB_WORKSPACE" diff --unified=3 "${base_ref}...${sha}" > "$diff_file" 2>/dev/null; then
+            :
+        else
             log_warn "git diff failed; falling back to API .diff"
             curl --fail --show-error --silent --max-time 60 \
                 -H "accept: application/vnd.github.v3.diff" \

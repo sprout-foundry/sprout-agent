@@ -201,12 +201,26 @@ fix_fetch_pr_context() {
 
     log_info "PR: $title (state=$state, base=$base, head=$sha, author=$author)"
 
-    # Diff — prefer git on-disk (cheap), fall back to API.
+    # Diff — prefer git on-disk (cheap, no API quota, no GitHub's 20k-line
+    # .diff cap), fall back to API only when the local repo can't produce it.
     local diff_file="$out/full.diff"
     if [ -d "$GITHUB_WORKSPACE/.git" ] && \
        git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "$sha" >/dev/null 2>&1; then
         log_info "Computing diff via git..."
-        if ! git -C "$GITHUB_WORKSPACE" diff --unified=3 "${base}...${sha}" > "$diff_file" 2>/dev/null; then
+        # Resolve the base ref (see review_lib.sh): the checkout materializes
+        # only the head branch, so the base usually lives at origin/<base>.
+        local base_ref="$base"
+        if ! git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "$base_ref" >/dev/null 2>&1; then
+            base_ref="origin/$base"
+        fi
+        if ! git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "$base_ref" >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" fetch --no-tags origin "$base" >/dev/null 2>&1 || true
+            base_ref="origin/$base"
+        fi
+        if git -C "$GITHUB_WORKSPACE" rev-parse --verify --quiet "$base_ref" >/dev/null 2>&1 && \
+           git -C "$GITHUB_WORKSPACE" diff --unified=3 "${base_ref}...${sha}" > "$diff_file" 2>/dev/null; then
+            :
+        else
             log_warn "git diff failed; falling back to API"
             curl --fail --show-error --silent --max-time 60 \
                 -H "accept: application/vnd.github.v3.diff" \
