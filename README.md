@@ -37,6 +37,32 @@ jobs:
 | `review` (default) | `pull_request` | Reviews the diff and posts inline comments + verdict (APPROVE / REQUEST_CHANGES / COMMENT). Does not modify code. |
 | `fix` | Comment `/sprout-fix` on an issue **or** a PR | **Issue**: reads the issue, creates a branch, implements the change, opens a PR. **PR**: reads review findings and comments, checks out the PR branch, fixes issues, pushes to the same PR. |
 | `plan` | Issue comment `/sprout-plan` or `workflow_dispatch` | Reads an issue and posts a structured implementation plan as a comment. |
+| `audit` | `schedule` or `workflow_dispatch` | Read-only security review of a checkout: the changes since `audit-base-ref`, the `audit-paths`, or everything. Writes findings JSON (`findings-path` output) and posts nothing; act on it in a later step. Needs no `github-token`. |
+
+### Audit mode
+
+```yaml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0, persist-credentials: false }
+- uses: sprout-foundry/sprout-agent@v1
+  id: audit
+  with:
+    mode: audit
+    audit-base-ref: ${{ env.LAST_AUDITED_SHA }}   # empty = full review
+    primary-provider: deepinfra
+    primary-model: deepseek-ai/DeepSeek-V4.1-Flash-1017
+    deepinfra-api-key: ${{ secrets.DEEPINFRA_API_KEY }}
+- run: jq . "${{ steps.audit.outputs.findings-path }}"
+```
+
+The agent runs with the `readonly` risk profile, without subagents or
+project-local skills, and with `GITHUB_TOKEN`/`GH_TOKEN` and the OIDC request
+variables removed from its environment. Its answer ends in a fenced JSON block
+of findings (`rule`, `severity`, `title`, `file`, `line`, `category`,
+`description`, `recommendation`, `confidence`); malformed entries are dropped.
+The audited code is untrusted input, so file issues from the findings in a
+separate job that holds the write token, and treat finding text as untrusted
+there too.
 
 ## Inputs
 
@@ -103,6 +129,8 @@ jobs:
 | `pr-number` | fix mode | PR number if a PR was created. |
 | `pr-url` | fix mode | PR URL if a PR was created. |
 | `branch-name` | fix mode | Branch name, e.g. `issue/42`. |
+| `findings-path` | audit mode | Path of the findings JSON. |
+| `findings-count` | audit mode | Number of findings. |
 
 ```yaml
 - uses: sprout-foundry/sprout-agent@v1
@@ -118,6 +146,6 @@ jobs:
 
 ## Security
 
-- The action needs `contents: write` for `fix` mode (pushes commits). `review` and `plan` need `contents: read` only.
+- The action needs `contents: write` for `fix` mode (pushes commits). `review` and `plan` need `contents: read` only; `audit` needs no token at all.
 - `fix` mode on an **issue** creates a branch named `issue/<N>` and opens a new PR. On a **PR** it commits directly to the PR's existing branch. Pin `max-budget-usd` low for untrusted repos.
 - Self-PR detection: the action downgrades `APPROVE` / `REQUEST_CHANGES` to `COMMENT` when reviewing its own PRs.

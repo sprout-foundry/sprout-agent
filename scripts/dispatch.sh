@@ -17,7 +17,10 @@ log_debug "max iterations: $EFFECTIVE_MAX_ITERATIONS, budget: $EFFECTIVE_MAX_BUD
 
 # Validate required inputs up front. Better to fail fast on a typo than to
 # debug the deeper "sprout agent failed with exit code 2" mystery.
-[ -n "${GITHUB_TOKEN:-}" ]  || { log_err "github-token is required"; exit 1; }
+# Audit mode never talks to GitHub, so it is the one mode without a token.
+if [ "$MODE" != "audit" ]; then
+    [ -n "${GITHUB_TOKEN:-}" ] || { log_err "github-token is required"; exit 1; }
+fi
 [ -n "${AI_PROVIDER:-}" ]   || { log_err "primary-provider is required"; exit 1; }
 [ -n "${AI_MODEL:-}" ]      || { log_err "primary-model is required"; exit 1; }
 
@@ -54,8 +57,9 @@ case "$MODE" in
     review) "$SPROUT_AGENT_MODES/review.sh" ;;
     fix)    "$SPROUT_AGENT_MODES/fix.sh"    ;;
     plan)   "$SPROUT_AGENT_MODES/plan.sh"   ;;
+    audit)  "$SPROUT_AGENT_MODES/audit.sh"  ;;
     *)
-        log_err "Unknown mode: $MODE (expected: review, fix, plan)"
+        log_err "Unknown mode: $MODE (expected: review, fix, plan, audit)"
         exit 1
         ;;
 esac

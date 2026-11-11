@@ -39,10 +39,10 @@ jobs:
           assert isinstance(a.get('runs', {}).get('steps'), list), 'runs.steps must be a list'
           assert len(a['runs']['steps']) >= 3, 'expected at least 3 steps'
           inputs = a.get('inputs', {})
-          for required in ['primary-provider', 'primary-model', 'github-token']:
+          for required in ['primary-provider', 'primary-model']:
               assert inputs.get(required, {}).get('required') == True, f'{required} must be required'
           outputs = a.get('outputs', {})
-          for expected in ['success', 'pr-number', 'pr-url', 'branch-name', 'cost']:
+          for expected in ['success', 'pr-number', 'pr-url', 'branch-name', 'cost', 'findings-path', 'findings-count']:
               assert expected in outputs, f'missing output: {expected}'
           print(f'OK: {len(inputs)} inputs, {len(outputs)} outputs, {len(a[\"runs\"][\"steps\"])} steps')
           "
@@ -59,3 +59,32 @@ jobs:
             bash -n "$f" || exit 1
           done
           echo "All scripts parse cleanly"
+
+  audit-findings:
+    name: Audit findings extraction
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract and validate findings from a canned agent answer
+        run: |
+          set -euo pipefail
+          export SPROUT_RUN_DIR="$RUNNER_TEMP/audit" MODE=audit SPROUT_AUDIT_NO_MAIN=1
+          mkdir -p "$SPROUT_RUN_DIR"
+          answer=$(printf '%s\n' \
+            'Reviewed the handlers.' \
+            '```json' \
+            '{"findings":[' \
+            ' {"rule":"SQL Injection","severity":"high","title":"t","file":"./a.go","line":3,"category":"injection"},' \
+            ' {"rule":"x","severity":"urgent","title":"bad severity","file":"b.go"},' \
+            ' {"severity":"low","title":"no rule","file":"c.go"}' \
+            ']}' \
+            '```')
+          jq -n --arg r "$answer" '{status:"completed",response:$r}' > "$SPROUT_RUN_DIR/result.json"
+          source scripts/common.sh
+          source src/modes/audit.sh
+          audit_extract_findings "$SPROUT_RUN_DIR/result.json" "$SPROUT_RUN_DIR/findings.json"
+          jq -e '.findings | length == 1' "$SPROUT_RUN_DIR/findings.json"
+          jq -e '.findings[0] | .rule == "sql-injection" and .file == "a.go" and .confidence == "medium"' "$SPROUT_RUN_DIR/findings.json"
+          jq -n '{response:"no json here"}' > "$SPROUT_RUN_DIR/bad.json"
+          ! audit_extract_findings "$SPROUT_RUN_DIR/bad.json" "$SPROUT_RUN_DIR/out.json"
+          echo "extraction OK"

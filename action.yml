@@ -11,13 +11,14 @@ inputs:
   # Mode and event handling
   # -------------------------------------------------------------------------
   mode:
-    description: 'Operation mode: review (default), fix, or plan'
+    description: 'Operation mode: review (default), fix, plan, or audit'
     required: false
     default: 'review'
 
   github-token:
-    description: 'GitHub token for API access (PR/issue fetch + comments)'
-    required: true
+    description: 'GitHub token for API access (PR/issue fetch + comments). Required except in audit mode, which never uses it.'
+    required: false
+    default: ''
 
   # -------------------------------------------------------------------------
   # Sprout installation
@@ -138,6 +139,31 @@ inputs:
     default: 'false'
 
   # -------------------------------------------------------------------------
+  # Audit mode — read-only security review of a checkout. Writes findings
+  # JSON for a later step to act on; the agent gets no GitHub token.
+  # -------------------------------------------------------------------------
+  audit-target:
+    description: 'Directory to audit, relative to the workspace (default: the workspace).'
+    required: false
+    default: '.'
+  audit-base-ref:
+    description: 'Review only what changed between this commit and HEAD. Empty: review audit-paths, or everything.'
+    required: false
+    default: ''
+  audit-paths:
+    description: 'Space- or newline-separated paths to review in full (ignored when audit-base-ref is set).'
+    required: false
+    default: ''
+  audit-instructions-file:
+    description: 'Markdown file of project context (threat model, trust boundaries) added to the audit prompt.'
+    required: false
+    default: ''
+  findings-path:
+    description: 'Where to write the findings JSON (default: inside the run directory).'
+    required: false
+    default: ''
+
+  # -------------------------------------------------------------------------
   # Workflow tuning
   # -------------------------------------------------------------------------
   max-iterations:
@@ -197,6 +223,12 @@ outputs:
   cost:
     description: 'Cumulative USD cost of the run, if reported'
     value: ${{ steps.main.outputs.cost }}
+  findings-path:
+    description: 'Path of the findings JSON (audit mode)'
+    value: ${{ steps.main.outputs.findings-path }}
+  findings-count:
+    description: 'Number of findings reported (audit mode)'
+    value: ${{ steps.main.outputs.findings-count }}
 
 runs:
   using: 'composite'
@@ -264,6 +296,11 @@ runs:
         REVIEW_TYPE: ${{ inputs.review-type }}
         COMMENT_THRESHOLD: ${{ inputs.comment-threshold }}
         DETAILED_SUMMARY: ${{ inputs.detailed-summary }}
+        AUDIT_TARGET: ${{ inputs.audit-target }}
+        AUDIT_BASE_REF: ${{ inputs.audit-base-ref }}
+        AUDIT_PATHS: ${{ inputs.audit-paths }}
+        AUDIT_INSTRUCTIONS_FILE: ${{ inputs.audit-instructions-file }}
+        FINDINGS_PATH: ${{ inputs.findings-path }}
         # Sprout reads provider keys from env, not from api_keys.json. Pass
         # every key through so the active provider is always authenticated.
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}

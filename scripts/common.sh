@@ -48,6 +48,7 @@ default_max_iterations() {
         review) echo 120 ;;
         fix)    echo 240 ;;
         plan)   echo 60 ;;
+        audit)  echo 150 ;;
         *)      echo 120 ;;
     esac
 }
@@ -57,6 +58,7 @@ default_budget_usd() {
         review) echo 2.00 ;;
         fix)    echo 8.00 ;;
         plan)   echo 1.00 ;;
+        audit)  echo 3.00 ;;
         *)      echo 2.00 ;;
     esac
 }
@@ -66,6 +68,7 @@ default_timeout_minutes() {
         review) echo 15 ;;
         fix)    echo 45 ;;
         plan)   echo 10 ;;
+        audit)  echo 30 ;;
         *)      echo 15 ;;
     esac
 }
